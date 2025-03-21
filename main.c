@@ -78,6 +78,7 @@ uint8_t Display, Unidades, Decenas;
 int  Residuo, DutyCycle; 
 int  Encendido=0;
 int  Desvaneciendo=0;
+int  CuentaActual;
 volatile int Cuenta = 0;  // 1 = horario, -1 = antihorario, 0 = sin movimientoo
 //================================================== Funciones  ====================================================
 //================================================== Logica del display
@@ -105,8 +106,8 @@ void actualizar_display()
 	//Solo existen 2 display, cuando llegue al segundo, se reinicia
 	Display &= 1;
 }
-void actualizar_duty_cycle() {
-	DutyCycle=(7*Cuenta)+325;
+ void actualizar_duty_cycle() {
+	DutyCycle=(5*Cuenta)+514;
 
     ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, DutyCycle);
     ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
@@ -131,7 +132,9 @@ static void IRAM_ATTR encoder_isr_handler(void* arg)
        	if (Cuenta<99)
        	{Cuenta=Cuenta+1;}
 		else
-		{Cuenta=Cuenta;}
+		{
+			Cuenta=Cuenta;
+		}
      }
 }
 // Interrupcion de Actualizacion de alarma
@@ -144,24 +147,52 @@ static bool IRAM_ATTR ActualizacionDelDisplay(gptimer_handle_t timer, const gpti
 //================================================== Boton y estado regresivo
 static void IRAM_ATTR InterrupcionDeEncendido(void* arg) 
 {
-	//Indicamos el estado, o sea, encendido
-	Encendido=1;
-	// Reiniciamos y empezamos
-	ledc_timer_rst(LEDC_HIGH_SPEED_MODE, LEDC_TIMER_0);
-	ledc_timer_resume(LEDC_HIGH_SPEED_MODE, LEDC_TIMER_0);
+	
+	
+	if(Encendido==0)
+	{
+			gptimer_handle_t TimerFade = (gptimer_handle_t) arg;
+	 	if(Cuenta>0)
+	 	{
+			 
+			CuentaActual=Cuenta;
+			//Indicamos el estado, o sea, encendido
+			Encendido=1;
+			
+		 	ledc_timer_rst(LEDC_HIGH_SPEED_MODE, LEDC_TIMER_0);
+			ledc_timer_resume(LEDC_HIGH_SPEED_MODE, LEDC_TIMER_0);
+		 	
+		 	gpio_isr_handler_remove(BtnA);
+			gpio_isr_handler_remove(BtnEncendido);
+			gpio_isr_handler_remove(BtnApagado);
+				 if(Desvaneciendo==0)
+				 {
+					 Cuenta=0;
+					 gptimer_set_raw_count(TimerFade, 0);			
+					 gptimer_start(TimerFade);
+					 Desvaneciendo=1;
+				 }
+		 }
+	}
  	
 }
 static void IRAM_ATTR InterrupcionDeApagado(void* arg) 
 {
 	// Indicamos el estado (ecendido=0 es que esta apagado)
-	Encendido=0;
+	
 	// Velocidad del canal	/Numerodel canal	 Frecuenciadeseada	 /Tiempo en que tarda en llegar a la frecuencia deseada(ms)
 	//ledc_set_fade_with_time(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 0, 		 2000);
 	//ledc_fade_start(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);		// nada puede interrumpir esta linea de codigo (wait done)
-    // 	ledc_timer_pause(LEDC_HIGH_SPEED_MODE, LEDC_TIMER_0);
+    // ledc_timer_pause(LEDC_HIGH_SPEED_MODE, LEDC_TIMER_0);
  	gptimer_handle_t TimerFade = (gptimer_handle_t) arg;
- 	if(Cuenta>0){
-		 if(Desvaneciendo==0){
+ 	if(Cuenta>0)
+ 	{
+		Encendido=0;
+		gpio_isr_handler_remove(BtnA);
+		gpio_isr_handler_remove(BtnEncendido);
+		gpio_isr_handler_remove(BtnApagado);
+		 if(Desvaneciendo==0)
+		 {
 			 gptimer_set_raw_count(TimerFade, 0);			
 			 gptimer_start(TimerFade);
 			 Desvaneciendo=1;
@@ -173,13 +204,48 @@ static bool IRAM_ATTR AplicarFade(gptimer_handle_t timer, const gptimer_alarm_ev
 {
 	BaseType_t high_task_awoken = pdFALSE;
 	actualizar_duty_cycle();
-	if (Cuenta==0){
-		Cuenta=0;
-		Desvaneciendo=0;
-		gptimer_stop(timer);
-	}else if(Cuenta>0){
-		Cuenta=Cuenta -1;
+	
+	
+	if (Encendido==0)
+	{
+		if (Cuenta==0)
+		{
+			  // Detener el canal de PWM completamente
+   			ledc_timer_pause(LEDC_HIGH_SPEED_MODE, LEDC_TIMER_0);
+   			ledc_stop(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 0); 
+			Cuenta=0;
+			Desvaneciendo=0;
+			gpio_isr_handler_add(BtnA, encoder_isr_handler, NULL);
+			gpio_isr_handler_add(BtnEncendido, InterrupcionDeEncendido, timer);
+			gpio_isr_handler_add(BtnApagado, InterrupcionDeApagado, timer);
+			gptimer_stop(timer);
+		}
+		else if(Cuenta>0)
+		{
+			Cuenta=Cuenta -1;
+		}
 	}
+	
+	else if(Encendido==1)
+	{
+		if (Cuenta==CuentaActual)
+		{
+			//Encendido=0;
+			Cuenta=Cuenta;
+			Desvaneciendo=0;
+			gpio_isr_handler_add(BtnA, encoder_isr_handler, NULL);
+			gpio_isr_handler_add(BtnEncendido, InterrupcionDeEncendido, timer);
+			gpio_isr_handler_add(BtnApagado, InterrupcionDeApagado, timer);
+			gptimer_stop(timer);
+		}
+		else if(Cuenta>=0)
+		{
+			Cuenta=Cuenta +1;
+		}
+	}
+	
+	
+	
 	return (high_task_awoken == pdTRUE); 		
 }
 //================================================== Main ==========================================================
@@ -223,7 +289,7 @@ void app_main(void)
 	gptimer_new_timer(&TimerConfiguracionGeneral, &TimerFade); 
 	gptimer_alarm_config_t AlarmaCambioPwm =
 	{
-		.alarm_count = 100000,
+		.alarm_count = 10000,
 		.reload_count = 0,
 		.flags.auto_reload_on_alarm = true
 	};
@@ -283,7 +349,7 @@ void app_main(void)
     // 
     gpio_isr_handler_add(BtnA, encoder_isr_handler, NULL);
     // 
-    gpio_isr_handler_add(BtnEncendido, InterrupcionDeEncendido, NULL);
+    gpio_isr_handler_add(BtnEncendido, InterrupcionDeEncendido, (void*)TimerFade);
     // 
     gpio_isr_handler_add(BtnApagado, InterrupcionDeApagado, (void*)TimerFade);
     // =============================================== LOGICA DEL DISPLAY =========================================
