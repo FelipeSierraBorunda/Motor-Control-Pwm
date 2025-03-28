@@ -57,7 +57,7 @@ void AsignarSegmentos(uint8_t BCD_Value)
 	ledc_timer_config_t PWM_timer = 
 	    {
 	        .duty_resolution = LEDC_TIMER_10_BIT, 		// resolution of PWM duty (1024)
-	        .freq_hz = 1000,                      		// frequency of PWM signal
+	        .freq_hz = 10000,                      		// frequency of PWM signal
 	        .speed_mode = LEDC_HIGH_SPEED_MODE,      	// timer mode
 	        .timer_num = LEDC_TIMER_0,            		// timer index
 	        .clk_cfg = LEDC_APB_CLK,             		// Reloj de 80Mhz
@@ -181,8 +181,8 @@ static void IRAM_ATTR InterrupcionDeApagado(void* arg)
 	// Indicamos el estado (ecendido=0 es que esta apagado)
 	
 	// Velocidad del canal	/Numerodel canal	 Frecuenciadeseada	 /Tiempo en que tarda en llegar a la frecuencia deseada(ms)
-	//ledc_set_fade_with_time(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 0, 		 2000);
-	//ledc_fade_start(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);		// nada puede interrumpir esta linea de codigo (wait done)
+	ledc_set_fade_with_time(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, 0, 		 2000);
+	ledc_fade_start(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, LEDC_FADE_WAIT_DONE);		// nada puede interrumpir esta linea de codigo (wait done)
     // ledc_timer_pause(LEDC_HIGH_SPEED_MODE, LEDC_TIMER_0);
  	gptimer_handle_t TimerFade = (gptimer_handle_t) arg;
  	if(Cuenta>0)
